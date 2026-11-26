@@ -54,7 +54,6 @@ services:
       API_KEYCLOAK_URL: http://keycloak-server:8080/auth
       API_KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       API_KEYCLOAK_SERVICE_CLIENT_ID: fgv-membership-service
-      # Told when a new user has verified their address; comma separated
       # Spexregister: who the spexare are, and where the membership feed's consumer is told about changes
       API_SPEXREGISTER_GRAPHQL_URL: ${SPEXREGISTER_GRAPHQL_URL:-http://spexregister-api:8080/api/graphql}
       API_SYNC_NOTIFY_URLS: ${SPEXREGISTER_NOTIFY_URL:-http://spexregister-api:8080/api/sync/notify}
@@ -63,6 +62,7 @@ services:
       API_PAYMENT_BANKGIRO: ${BANKGIRO:-}
       API_PAYMENT_BANK_ACCOUNT: ${BANK_ACCOUNT:-}
       API_PAYMENT_PAYEE_NAME: ${PAYEE_NAME:-FGV}
+      # Told when a new user has verified their address; comma separated
       API_REGISTRATION_NOTIFY_RECIPIENTS: ${REGISTRATION_NOTIFY_RECIPIENTS:?REGISTRATION_NOTIFY_RECIPIENTS must be set in .env}
       SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set in .env}
       SMTP_PORT: ${SMTP_PORT:-25}
@@ -112,12 +112,22 @@ services:
       BETTER_AUTH_URL: https://${WEB_HOST}
       KEYCLOAK_CLIENT_ID: fgv-membership
       KEYCLOAK_ISSUER: https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}
+      # The API's plain endpoints (registration, personal links, the Excel exports) are on the same host as GraphQL
       API_GRAPHQL_ENDPOINT: http://membership-api:8080/api/graphql
-      API_REGISTRATION_ENDPOINT: http://membership-api:8080/api/registration
-      # Personal payment links and the Excel exports go through the API, too
-      API_PERSONAL_ENDPOINT: http://membership-api:8080/api/personal
-      # Where Spexregister is, for the link from a member to the spexare there (optional)
+      SUPPORTED_LOCALES: ${SUPPORTED_LOCALES:-sv,en}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-sv}
+      # The other FGV applications, for the switcher in the header and for the link from a member to the spexare
       SPEXREGISTER_WEB_URL: ${SPEXREGISTER_WEB_URL:-}
+      REVIVAL_WEB_URL: ${REVIVAL_WEB_URL:-}
+      SPEXIPEDIA_WEB_URL: ${SPEXIPEDIA_WEB_URL:-}
+      SPEXIFY_WEB_URL: ${SPEXIFY_WEB_URL:-}
+      SPEXFLIX_WEB_URL: ${SPEXFLIX_WEB_URL:-}
+      SPEXGRAM_WEB_URL: ${SPEXGRAM_WEB_URL:-}
+      ARCHIVE_WEB_URL: ${ARCHIVE_WEB_URL:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL}
+      FEEDBACK_EMAIL: ${FEEDBACK_EMAIL}
+      UMAMI_URL: http://umami-server:3000
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       # The public key of the Turnstile widget on the registration page
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY must be set in .env}
     restart: unless-stopped

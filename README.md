@@ -116,6 +116,28 @@ about payments and the reminder time are set by an administrator under *Settings
 `SWISH_NUMBER`, `BANK_ACCOUNT` and `REGISTRATION_NOTIFY_RECIPIENTS` are only what is used until they are. The
 maintenance jobs and the audit log are under *Maintenance* and *Audit log*.
 
+## Data and backups
+
+The database (memberships, payments, bank transactions and the audit log, which are FGV's bookkeeping) is in the named
+volume `mysql_data`. Copying the files of a running MySQL server doesn't give a consistent backup, so
+`bin/backup-db.sh` runs `mysqldump --single-transaction` into `backups/<timestamp>/membership-mysql.sql.gz`, which is
+consistent without stopping anything. Run it nightly from the host user's crontab (`crontab -e`):
+
+```
+40 2 * * * /home/<user>/fgv-membership-deploy/bin/backup-db.sh >> /home/<user>/fgv-membership-deploy/backups/backup.log 2>&1
+```
+
+`BACKUP_KEEP_DAYS` sets how many days of dumps to keep (default 14). Copy `backups/` off the host as well, e.g. with
+`rclone` or `rsync`: a backup on the same disk doesn't survive losing the disk. To restore a dump:
+
+```shell
+gunzip -c backups/<timestamp>/membership-mysql.sql.gz | docker compose exec -T membership-mysql \
+  sh -c 'MYSQL_PWD=$(cat /run/secrets/MYSQL_ROOT_PASSWORD) mysql -uroot "$MYSQL_DATABASE"'
+```
+
+Every service logs to the console only; read it with `docker compose logs -f <service>`. Each keeps at most 5 × 10 MB
+(`x-logging` in `compose.yaml`), so logs can't fill the disk.
+
 ## Staging
 
 `compose.tunnel.yaml` adds `cloudflared`. In the tunnel's public hostnames route `WEB_HOST` to `http://membership-web:3000`
@@ -126,7 +148,9 @@ none for `API_HOST`.
 ## Production
 
 Production's reverse proxy routes `WEB_HOST` to `membership-web:3000` and `API_HOST` to `membership-api:8080`, uncached.
-The management port (`9000`, health and metrics) is not published and stays on the shared network.
+The management port (`9000`, health and metrics) is not published and stays on the shared network. Schedule
+`bin/backup-db.sh` in cron and copy `backups/` to off-host storage (see *Data and backups*), and pin `API_IMAGE` and
+`WEB_IMAGE` to release versions.
 
 ## License
 
