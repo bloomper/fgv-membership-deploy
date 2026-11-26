@@ -77,3 +77,13 @@ request is invalid (the message says why). Retry on any other answer: the same `
 person gets an account with the *Default access* an administrator has chosen (Medlemskap web, *Default access*), and two
 emails: one saying the account exists, one from the login service with a link to choose a password. The administrators
 (`REGISTRATION_NOTIFY_RECIPIENTS`) are emailed about every payment, from the shop or reported by a member.
+
+## The board
+
+The board's pages are under *Members* in the web: the members of a year with filters, the trend over the years, renewal
+reminders, a page for each member (waive a fee, ask to pay with a personal link, record a payment that had no request),
+and Excel lists of the members and, for the treasurer, of the year's payments. A *personal link* in an email opens
+`https://WEB_HOST/pay/<token>`, a page that needs no login and shows only that payment request. The token is long and
+random, its hash is all that is stored, and it works until the end of the year. Personal links and the exports are
+served by the API under `/api/personal` and `/api/exports`; only `/api/personal` is open without a token, so expose
+that path (and the web) but nothing else of the API.

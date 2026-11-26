@@ -109,6 +109,10 @@ services:
       KEYCLOAK_ISSUER: https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}
       API_GRAPHQL_ENDPOINT: http://membership-api:8080/api/graphql
       API_REGISTRATION_ENDPOINT: http://membership-api:8080/api/registration
+      # Personal payment links and the Excel exports go through the API, too
+      API_PERSONAL_ENDPOINT: http://membership-api:8080/api/personal
+      # Where Spexregister is, for the link from a member to the spexare there (optional)
+      SPEXREGISTER_WEB_URL: ${SPEXREGISTER_WEB_URL:-}
       # The public key of the Turnstile widget on the registration page
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY must be set in .env}
     restart: unless-stopped
