@@ -58,3 +58,22 @@ treasurer records the payment under *Payments* in the web. Fees are set by an ad
 The API reads spexare from Spexregister (`SPEXREGISTER_GRAPHQL_URL`, default `http://spexregister-api:8080/api/graphql`)
 with `fgv-membership-service`'s `MEMBERSHIP` role, so Spexregister's API must be on the `fgv` network. After each change
 to what counts as a membership it calls `SPEXREGISTER_NOTIFY_URL`, so Spexregister's copy follows within seconds.
+
+## The WordPress shop
+
+The shop tells the API that someone paid with `POST https://API_HOST/api/external-payments` and the access token of the
+`fgv-wordpress-service` client (client credentials; its secret is `clients/fgv-wordpress-service` in
+`fgv-infra-deploy`'s secrets). The API's address is the one the web uses; expose `/api/external-payments` the same way
+as `/api/registration`.
+
+```
+curl -X POST https://API_HOST/api/external-payments \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"email":"greta@example.org","firstName":"Greta","lastName":"Garbo","year":2027,"amount":200,"reference":"order-1234"}'
+```
+
+`201` means recorded, `200` that it was told before or that the person already was a member that year, `400` that the
+request is invalid (the message says why). Retry on any other answer: the same `reference` never records twice. A new
+person gets an account with the *Default access* an administrator has chosen (Medlemskap web, *Default access*), and two
+emails: one saying the account exists, one from the login service with a link to choose a password. The administrators
+(`REGISTRATION_NOTIFY_RECIPIENTS`) are emailed about every payment, from the shop or reported by a member.
