@@ -51,8 +51,9 @@ Apache 2.0.
 
 ## Paying
 
-`SWISH_NUMBER` and `BANK_ACCOUNT` are what members see on the payment page; without a Swish number the page shows the
-bank account and the reference only. Swish never tells FGV that a payment was made: the member says they paid, and the
+`SWISH_NUMBER`, `BANKGIRO` and `BANK_ACCOUNT` are what members see on the payment page: pay with Swish, to the bankgiro with
+the reference as the message, or (if a bank account is set) by a direct transfer, which may not be used. Without a Swish
+number the page shows the bankgiro, the account and the reference only. Swish never tells FGV that a payment was made: the member says they paid, and the
 treasurer records the payment under *Payments* in the web. Fees are set by an administrator under *Fees*.
 
 The API reads spexare from Spexregister (`SPEXREGISTER_GRAPHQL_URL`, default `http://spexregister-api:8080/api/graphql`)
