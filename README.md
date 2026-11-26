@@ -48,3 +48,13 @@ administration like any other.
 ## License
 
 Apache 2.0.
+
+## Paying
+
+`SWISH_NUMBER` and `BANK_ACCOUNT` are what members see on the payment page; without a Swish number the page shows the
+bank account and the reference only. Swish never tells FGV that a payment was made: the member says they paid, and the
+treasurer records the payment under *Payments* in the web. Fees are set by an administrator under *Fees*.
+
+The API reads spexare from Spexregister (`SPEXREGISTER_GRAPHQL_URL`, default `http://spexregister-api:8080/api/graphql`)
+with `fgv-membership-service`'s `MEMBERSHIP` role, so Spexregister's API must be on the `fgv` network. After each change
+to what counts as a membership it calls `SPEXREGISTER_NOTIFY_URL`, so Spexregister's copy follows within seconds.

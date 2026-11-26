@@ -51,6 +51,13 @@ services:
       API_KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       API_KEYCLOAK_SERVICE_CLIENT_ID: fgv-membership-service
       # Told when a new user has verified their address; comma separated
+      # Spexregister: who the spexare are, and where the membership feed's consumer is told about changes
+      API_SPEXREGISTER_GRAPHQL_URL: ${SPEXREGISTER_GRAPHQL_URL:-http://spexregister-api:8080/api/graphql}
+      API_SYNC_NOTIFY_URLS: ${SPEXREGISTER_NOTIFY_URL:-http://spexregister-api:8080/api/sync/notify}
+      # Where members pay
+      API_PAYMENT_SWISH_NUMBER: ${SWISH_NUMBER:-}
+      API_PAYMENT_BANK_ACCOUNT: ${BANK_ACCOUNT:-}
+      API_PAYMENT_PAYEE_NAME: ${PAYEE_NAME:-FGV}
       API_REGISTRATION_NOTIFY_RECIPIENTS: ${REGISTRATION_NOTIFY_RECIPIENTS:?REGISTRATION_NOTIFY_RECIPIENTS must be set in .env}
       SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set in .env}
       SMTP_PORT: ${SMTP_PORT:-25}
