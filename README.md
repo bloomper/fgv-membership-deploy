@@ -4,8 +4,19 @@ Docker Compose for Medlemskap: `membership-api`, `membership-web` and `membershi
 applications on the shared network `fgv-<DEPLOY_ENV>`. The product spec is in
 [`fgv-membership-spec`](../fgv-membership-spec/docs/product-spec.md).
 
-Only `membership-web` is reached from outside. The API stays on the shared network, where Keycloak, and later Spexregister
-and Nyuppsättning, call it.
+```
+browsers ──▶ membership-web ──▶ membership-api ──▶ membership-mysql
+other applications ──▶ membership-api (its own hostname, API_HOST)
+membership-api ──▶ keycloak-server, spexregister-api                          (fgv network)
+spexregister-api, revival-api ──▶ membership-api                              (fgv network)
+```
+
+The web reaches the API over the shared network. The API is also exposed on its own hostname, `API_HOST`, for the
+applications outside FGV's network that call it: ones that take payments (`/api/external/payments` and
+`/api/external/lookup`, see *Other applications that take payments*), and anything else that has a Keycloak token. The API
+enforces authentication per endpoint: everything needs a Keycloak token except registration (guarded by Turnstile and rate
+limits) and personal payment links (the token in the link is the key). `API_HOST` never has Cloudflare Access in front of
+it: the applications that call it cannot complete a login.
 
 ## Before you start
 
@@ -14,6 +25,7 @@ and Nyuppsättning, call it.
   secrets, and tell Keycloak to link *Register* to `MEMBERSHIP_URL/register`.
 - A Cloudflare Turnstile widget for the web's hostname: its site key goes in `.env`, its secret key in
   `secrets/TURNSTILE_SECRET_KEY`. **Without the secret key the API refuses every registration.**
+- `API_HOST` in `.env`: the hostname the API is reached on from outside (see *Staging* and *Production* for routing it).
 - A mail relay (the one Keycloak uses). Medlemskap sends the verification, approval and rejection emails itself.
 
 ## Setting up
@@ -45,10 +57,6 @@ and recipients move here:
 Users who registered in Keycloak and still wait in the group `pending-approval` are handled in Medlemskap's user
 administration like any other.
 
-## License
-
-Apache 2.0.
-
 ## Paying
 
 `SWISH_NUMBER`, `BANKGIRO` and `BANK_ACCOUNT` are what members see on the payment page: pay with Swish, to the bankgiro with
@@ -60,24 +68,35 @@ The API reads spexare from Spexregister (`SPEXREGISTER_GRAPHQL_URL`, default `ht
 with `fgv-membership-service`'s `MEMBERSHIP` role, so Spexregister's API must be on the `fgv` network. After each change
 to what counts as a membership it calls `SPEXREGISTER_NOTIFY_URL`, so Spexregister's copy follows within seconds.
 
-## The WordPress shop
+## Other applications that take payments
 
-The shop tells the API that someone paid with `POST https://API_HOST/api/external-payments` and the access token of the
-`fgv-wordpress-service` client (client credentials; its secret is `clients/fgv-wordpress-service` in
-`fgv-infra-deploy`'s secrets). The API's address is the one the web uses; expose `/api/external-payments` the same way
-as `/api/registration`.
+An application where members pay (a shop on FGV's website, say) tells Medlemskap that someone paid, and can ask whether an
+address has an account and a membership. Each such application gets its own Keycloak service client with the role
+`PAYMENT` on `fgv-membership`; the first is `fgv-external-payment-service` (client credentials; its secret is
+`clients/fgv-external-payment-service` in `fgv-infra-deploy`'s secrets). It gets a token from Keycloak and calls the API on
+`API_HOST`. Another such application gets its own client with the role `PAYMENT`, and its client id is added to
+`API_AUTHORIZED_PARTIES` in `.env`:
 
 ```
-curl -X POST https://API_HOST/api/external-payments \
+# Tell that someone paid for a year. paymentReference is the application's own id for the payment (an order or
+# transaction id): it is shown to the treasurer, appears in the bookkeeping export, and together with the application
+# makes telling the same payment twice harmless.
+curl -X POST https://API_HOST/api/external/payments \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"email":"greta@example.org","firstName":"Greta","lastName":"Garbo","year":2027,"amount":200,"reference":"order-1234"}'
+  -d '{"email":"greta@example.org","firstName":"Greta","lastName":"Garbo","year":2027,"amount":200,"paymentReference":"order-1234"}'
+
+# Is there an account, and is the address a member? year is optional (this year by default)
+curl "https://API_HOST/api/external/lookup?email=greta@example.org&year=2027" -H "Authorization: Bearer $TOKEN"
 ```
 
-`201` means recorded, `200` that it was told before or that the person already was a member that year, `400` that the
-request is invalid (the message says why). Retry on any other answer: the same `reference` never records twice. A new
-person gets an account with the *Default access* an administrator has chosen (Medlemskap web, *Default access*), and two
-emails: one saying the account exists, one from the login service with a link to choose a password. The administrators
-(`REGISTRATION_NOTIFY_RECIPIENTS`) are emailed about every payment, from the shop or reported by a member.
+`kind` in the payment may be `SUPPORT` (a support membership); `lifetime: true` is a life membership. For the payment, `201`
+means recorded, `200` that it was told before or that the person already was a member that year, `400` that the request is
+invalid (the message says why) and `503` that Spexregister cannot be reached; retry on any other failure. A new person gets
+a spexare in Spexregister and an account with the *Default access* an administrator has chosen (Medlemskap web, *Default
+access*), and two emails: one saying the account exists, one from the login service with a link to choose a password. The
+lookup answers `{ "account": {"exists", "enabled"}, "spexare", "member", "active": {"year", "kind", "lifetime", "status"} }`.
+The administrators (`REGISTRATION_NOTIFY_RECIPIENTS`) are emailed about every payment, from an application or reported by a
+member. The full description is in the server's API guide.
 
 ## The board
 
@@ -86,8 +105,7 @@ reminders, a page for each member (waive a fee, ask to pay with a personal link,
 and Excel lists of the members and, for the treasurer, of the year's payments. A *personal link* in an email opens
 `https://WEB_HOST/pay/<token>`, a page that needs no login and shows only that payment request. The token is long and
 random, its hash is all that is stored, and it works until the end of the year. Personal links and the exports are
-served by the API under `/api/personal` and `/api/exports`; only `/api/personal` is open without a token, so expose
-that path (and the web) but nothing else of the API.
+served by the API under `/api/personal` and `/api/exports`; the web calls them over the shared network.
 
 ## Revivals, applications and settings
 
@@ -97,3 +115,19 @@ director, who pays FGV the total; the treasurer matches the payment as usual. Sw
 about payments and the reminder time are set by an administrator under *Settings* in the web; the environment's
 `SWISH_NUMBER`, `BANK_ACCOUNT` and `REGISTRATION_NOTIFY_RECIPIENTS` are only what is used until they are. The
 maintenance jobs and the audit log are under *Maintenance* and *Audit log*.
+
+## Staging
+
+`compose.tunnel.yaml` adds `cloudflared`. In the tunnel's public hostnames route `WEB_HOST` to `http://membership-web:3000`
+and `API_HOST` (no path) to `http://membership-api:8080`, uncached. Restrict who can reach staging with Cloudflare Access
+as `spexregister-deploy`'s README describes: an application for `WEB_HOST` with an *Allow* policy for the testers, and
+none for `API_HOST`.
+
+## Production
+
+Production's reverse proxy routes `WEB_HOST` to `membership-web:3000` and `API_HOST` to `membership-api:8080`, uncached.
+The management port (`9000`, health and metrics) is not published and stays on the shared network.
+
+## License
+
+Apache 2.0.

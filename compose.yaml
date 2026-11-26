@@ -35,8 +35,9 @@ services:
       - MYSQL_ROOT_PASSWORD
       - MYSQL_USER_PASSWORD
 
-  # GraphQL and the registration endpoints. Not published: the web reaches it, and on the shared network Keycloak,
-  # Spexregister (the membership feed) and Nyuppsättning (payment requests) will
+  # GraphQL, the registration and personal-link endpoints, and what other applications call (payments told by them, the lookup).
+  # Not published by Docker: the web reaches it over the shared network, as do Spexregister (the membership feed) and
+  # Nyuppsättning (payment requests); the reverse proxy or the tunnel routes API_HOST to it for the applications outside
   membership-api:
     image: ${API_IMAGE:?API_IMAGE must be set in .env}
     environment:
@@ -47,6 +48,9 @@ services:
       SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_FGV_TOKEN_URI: http://keycloak-server:8080/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token
       SPRING_PROFILES_ACTIVE: ${DEPLOY_ENV}
       API_WEB_URL: https://${WEB_HOST}
+      # Whose tokens the API accepts: Medlemskap's own web and the applications that call it. Another application that tells
+      # about payments is added here, after it has a Keycloak client with the role PAYMENT on fgv-membership
+      API_SECURITY_AUTHORIZED_PARTIES: ${API_AUTHORIZED_PARTIES:-fgv-membership,fgv-spexregister-service,fgv-revival-service,fgv-external-payment-service}
       API_KEYCLOAK_URL: http://keycloak-server:8080/auth
       API_KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       API_KEYCLOAK_SERVICE_CLIENT_ID: fgv-membership-service
