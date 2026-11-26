@@ -87,3 +87,12 @@ and Excel lists of the members and, for the treasurer, of the year's payments. A
 random, its hash is all that is stored, and it works until the end of the year. Personal links and the exports are
 served by the API under `/api/personal` and `/api/exports`; only `/api/personal` is open without a token, so expose
 that path (and the web) but nothing else of the API.
+
+## Revivals, applications and settings
+
+Nyuppsättning pays the year's FGV fee for its participants with one request: it calls the GraphQL mutation
+`createRevivalPaymentRequest` as `fgv-revival-service` (role `REVIVAL` on `fgv-membership`) and shows the reference to the
+director, who pays FGV the total; the treasurer matches the payment as usual. Swish number, bank account, who is emailed
+about payments and the reminder time are set by an administrator under *Settings* in the web; the environment's
+`SWISH_NUMBER`, `BANK_ACCOUNT` and `REGISTRATION_NOTIFY_RECIPIENTS` are only what is used until they are. The
+maintenance jobs and the audit log are under *Maintenance* and *Audit log*.
