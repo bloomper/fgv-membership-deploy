@@ -1,0 +1,175 @@
+name: fgv-membership-${DEPLOY_ENV:?DEPLOY_ENV must be set in .env}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+# Keeps the processes from gaining privileges through setuid binaries
+x-security-opt: &security-opt
+  - no-new-privileges:true
+
+services:
+  membership-mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4}
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/MYSQL_ROOT_PASSWORD
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD_FILE: /run/secrets/MYSQL_USER_PASSWORD
+    restart: unless-stopped
+    logging: *logging
+    security_opt: *security-opt
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - default
+    secrets:
+      - MYSQL_ROOT_PASSWORD
+      - MYSQL_USER_PASSWORD
+
+  # GraphQL, the registration and personal-link endpoints, and what other applications call (payments told by them, the lookup).
+  # Not published by Docker: the web reaches it over the shared network, as do Spexregister (the membership feed) and
+  # Nyuppsättning (payment requests); the reverse proxy or the tunnel routes API_HOST to it for the applications outside
+  membership-api:
+    image: ${API_IMAGE:?API_IMAGE must be set in .env}
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://membership-mysql/${MYSQL_DATABASE}
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak-server:8080/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_FGV_TOKEN_URI: http://keycloak-server:8080/auth/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token
+      SPRING_PROFILES_ACTIVE: ${DEPLOY_ENV}
+      API_WEB_URL: https://${WEB_HOST}
+      # Whose tokens the API accepts: Medlemskap's own web and the applications that call it. Another application that tells
+      # about payments is added here, after it has a Keycloak client with the role PAYMENT on fgv-membership
+      API_SECURITY_AUTHORIZED_PARTIES: ${API_AUTHORIZED_PARTIES:-fgv-membership,fgv-spexregister-service,fgv-revival-service,fgv-external-payment-service}
+      API_KEYCLOAK_URL: http://keycloak-server:8080/auth
+      API_KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      API_KEYCLOAK_SERVICE_CLIENT_ID: fgv-membership-service
+      # Spexregister: who the spexare are, and where the membership feed's consumer is told about changes
+      API_SPEXREGISTER_GRAPHQL_URL: ${SPEXREGISTER_GRAPHQL_URL:-http://spexregister-api:8080/api/graphql}
+      API_SYNC_NOTIFY_URLS: ${SPEXREGISTER_NOTIFY_URL:-http://spexregister-api:8080/api/sync/notify}
+      # Where members pay
+      API_PAYMENT_SWISH_NUMBER: ${SWISH_NUMBER:-}
+      API_PAYMENT_BANKGIRO: ${BANKGIRO:-}
+      API_PAYMENT_BANK_ACCOUNT: ${BANK_ACCOUNT:-}
+      API_PAYMENT_PAYEE_NAME: ${PAYEE_NAME:-FGV}
+      # Told when a new user has verified their address; comma separated
+      API_REGISTRATION_NOTIFY_RECIPIENTS: ${REGISTRATION_NOTIFY_RECIPIENTS:?REGISTRATION_NOTIFY_RECIPIENTS must be set in .env}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set in .env}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_FROM: ${SMTP_FROM:?SMTP_FROM must be set in .env}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      SMTP_SSL: ${SMTP_SSL:-false}
+    restart: unless-stopped
+    logging: *logging
+    security_opt: *security-opt
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000;printf \"GET /actuator/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n\" >&3;grep -q \"^HTTP/1.1 200\" <&3" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    depends_on:
+      membership-mysql:
+        condition: service_healthy
+    networks:
+      - default
+      - fgv
+    secrets:
+      - source: MYSQL_USER_PASSWORD
+        target: MYSQL_API_USER_PASSWORD
+      - source: KEYCLOAK_SERVICE_CLIENT_SECRET
+        target: API_KEYCLOAK_SERVICE_CLIENT_SECRET
+      # Cloudflare Turnstile's secret key; without it the API refuses every registration
+      - source: TURNSTILE_SECRET_KEY
+        target: API_TURNSTILE_SECRET_KEY
+      - source: SMTP_PASSWORD
+        target: SMTP_PASSWORD
+
+  membership-web:
+    image: ${WEB_IMAGE:?WEB_IMAGE must be set in .env}
+    command:
+      - sh
+      - -c
+      - |
+        export AUTH_SECRET=$$(cat /run/secrets/WEB_AUTH_SECRET)
+        export KEYCLOAK_CLIENT_SECRET=$$(cat /run/secrets/KEYCLOAK_CLIENT_SECRET)
+        exec node server.js
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      BETTER_AUTH_URL: https://${WEB_HOST}
+      KEYCLOAK_CLIENT_ID: fgv-membership
+      KEYCLOAK_ISSUER: https://${KEYCLOAK_HOST}/auth/realms/${KEYCLOAK_REALM}
+      # The API's plain endpoints (registration, personal links, the Excel exports) are on the same host as GraphQL
+      API_GRAPHQL_ENDPOINT: http://membership-api:8080/api/graphql
+      SUPPORTED_LOCALES: ${SUPPORTED_LOCALES:-sv,en}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-sv}
+      # The other FGV applications, for the switcher in the header and for the link from a member to the spexare
+      SPEXREGISTER_WEB_URL: ${SPEXREGISTER_WEB_URL:-}
+      REVIVAL_WEB_URL: ${REVIVAL_WEB_URL:-}
+      SPEXIPEDIA_WEB_URL: ${SPEXIPEDIA_WEB_URL:-}
+      SPEXIFY_WEB_URL: ${SPEXIFY_WEB_URL:-}
+      SPEXFLIX_WEB_URL: ${SPEXFLIX_WEB_URL:-}
+      SPEXGRAM_WEB_URL: ${SPEXGRAM_WEB_URL:-}
+      ARCHIVE_WEB_URL: ${ARCHIVE_WEB_URL:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL}
+      FEEDBACK_EMAIL: ${FEEDBACK_EMAIL}
+      UMAMI_URL: http://umami-server:3000
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      # The public key of the Turnstile widget on the registration page
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY must be set in .env}
+    restart: unless-stopped
+    logging: *logging
+    security_opt: *security-opt
+    healthcheck:
+      test: [ "CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:3000/api/auth/ok" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      membership-api:
+        condition: service_healthy
+    networks:
+      - default
+      - fgv
+    secrets:
+      - WEB_AUTH_SECRET
+      - KEYCLOAK_CLIENT_SECRET
+
+volumes:
+  mysql_data:
+
+networks:
+  default:
+  fgv:
+    name: fgv-${DEPLOY_ENV}
+    external: true
+
+secrets:
+  MYSQL_ROOT_PASSWORD:
+    file: ./secrets/MYSQL_ROOT_PASSWORD
+  MYSQL_USER_PASSWORD:
+    file: ./secrets/MYSQL_USER_PASSWORD
+  KEYCLOAK_SERVICE_CLIENT_SECRET:
+    file: ./secrets/KEYCLOAK_SERVICE_CLIENT_SECRET
+  KEYCLOAK_CLIENT_SECRET:
+    file: ./secrets/KEYCLOAK_CLIENT_SECRET
+  WEB_AUTH_SECRET:
+    file: ./secrets/WEB_AUTH_SECRET
+  TURNSTILE_SECRET_KEY:
+    file: ./secrets/TURNSTILE_SECRET_KEY
+  SMTP_PASSWORD:
+    file: ./secrets/SMTP_PASSWORD
